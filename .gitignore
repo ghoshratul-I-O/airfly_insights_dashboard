@@ -23,3 +23,6 @@ Thumbs.db
 
 # Environment variables
 .env
+
+# raw dataset
+data/raw/
