@@ -4,6 +4,7 @@ import numpy as np
 # Load dataset
 df = pd.read_csv("data/raw/flights.csv")
 
+
 # Memory Optimization
 
 # Downcast integers
@@ -31,19 +32,21 @@ df['route'] = df['origin'] + "-" + df['dest']
 # Create cancelled column
 df['cancelled'] = df['dep_time'].isna().astype(int)
 
-# Create on_time column
-df['on_time'] = (df['arr_delay'] <= 0).astype(int)
+# Create on_time column (ignore cancelled flights)
+df['on_time'] = np.where(df['arr_delay'] <= 0, 1, 0)
+df.loc[df['cancelled'] == 1, 'on_time'] = np.nan
 
 
-# Cleaning
 
-# Remove rows with missing arrival delay
-df = df.dropna(subset=['arr_delay'])
+
+# Keep cancelled flights but fill delay values
+df['arr_delay'] = df['arr_delay'].fillna(0)
+df['dep_delay'] = df['dep_delay'].fillna(0)
 
 
 # Save cleaned data
-
 df.to_csv("data/processed/flights_clean.csv", index=False)
+
 
 print("Preprocessing completed successfully.")
 print("Final dataset shape:", df.shape)
