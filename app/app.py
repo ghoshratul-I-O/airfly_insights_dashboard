@@ -270,8 +270,14 @@ r1c2.plotly_chart(fig2, use_container_width=True)
 
 r2c1, r2c2 = st.columns(2)
 
+month_order_full = [calendar.month_abbr[i] for i in range(1, 13)]
+
+monthly_trend = filtered_df.groupby("month_name").size().reset_index(name="Flights")
+monthly_trend["month_name"] = pd.Categorical(monthly_trend["month_name"], categories=month_order_full, ordered=True)
+monthly_trend = monthly_trend.sort_values("month_name")
+
 fig3 = px.line(
-    filtered_df.groupby("month_name").size().reset_index(name="Flights"),
+    monthly_trend,
     x="month_name", y="Flights",
     title="Monthly Flight Trend",
     labels={"month_name": "Month", "Flights": "Number of Flights"},
@@ -608,3 +614,111 @@ fig_season_delay = px.bar(
 )
 fig_season_delay.update_layout(coloraxis_showscale=False)
 sa2.plotly_chart(fig_season_delay, use_container_width=True)
+
+# ── Flight Recommender ───────────────────────────────────────────────
+
+st.markdown("---")
+st.header("✈️ Best Carrier & Best Time to Fly")
+
+st.markdown("Select a route to get recommendations based on delay and reliability.")
+
+col1, col2 = st.columns(2)
+
+with col1:
+    rec_origin = st.selectbox(
+        "Select Origin Airport",
+        sorted(df["origin"].unique()),
+        key="rec_origin"
+    )
+
+with col2:
+    rec_dest = st.selectbox(
+        "Select Destination Airport",
+        sorted(df["dest"].unique()),
+        key="rec_dest"
+    )
+
+# Filter route
+route_df = df[(df["origin"] == rec_origin) & (df["dest"] == rec_dest)].copy()
+
+if len(route_df) > 0:
+
+    st.subheader("🏆 Best Carrier")
+
+    carrier_perf = (
+        route_df.groupby("carrier")
+        .agg(
+            avg_dep_delay=("dep_delay", "mean"),
+            avg_arr_delay=("arr_delay", "mean"),
+            cancel_rate=("cancelled", "mean"),
+            on_time_rate=("on_time", "mean")
+        )
+        .reset_index()
+    )
+
+    # Score calculation (lower is better)
+    carrier_perf["score"] = (
+        carrier_perf["avg_dep_delay"] * 0.4 +
+        carrier_perf["cancel_rate"] * 100 * 0.4 +
+        (1 - carrier_perf["on_time_rate"]) * 100 * 0.2
+    )
+
+    carrier_perf = carrier_perf.sort_values("score")
+
+    best_carrier = carrier_perf.iloc[0]
+
+    st.success(
+        f"Best Airline: {CARRIER_NAMES.get(best_carrier['carrier'], best_carrier['carrier'])}"
+    )
+
+    st.dataframe(carrier_perf, use_container_width=True)
+
+    # ── Time Recommendation ─────────────────────────────────────
+
+    st.subheader("⏰ Best Time to Fly")
+
+    def rec_time_bucket(h):
+        if 5 <= h < 9:
+            return "Early Morning (5–9)"
+        elif 9 <= h < 12:
+            return "Morning (9–12)"
+        elif 12 <= h < 17:
+            return "Afternoon (12–17)"
+        elif 17 <= h < 21:
+            return "Evening (17–21)"
+        else:
+            return "Night (21–5)"
+
+    route_df["time_bucket"] = route_df["hour"].apply(rec_time_bucket)
+
+    time_perf = (
+        route_df.groupby("time_bucket")["dep_delay"]
+        .mean()
+        .reindex([
+            "Early Morning (5–9)",
+            "Morning (9–12)",
+            "Afternoon (12–17)",
+            "Evening (17–21)",
+            "Night (21–5)"
+        ])
+        .reset_index()
+    )
+
+    best_time = time_perf.sort_values("dep_delay").iloc[0]["time_bucket"]
+
+    st.success(f"Best Time to Fly: {best_time}")
+
+    # Chart
+    fig_time = px.bar(
+        time_perf,
+        x="time_bucket",
+        y="dep_delay",
+        title="Average Delay by Time of Day",
+        labels={"dep_delay": "Avg Departure Delay (min)", "time_bucket": "Time of Day"},
+        template="plotly_white"
+    )
+
+    st.plotly_chart(fig_time, use_container_width=True)
+
+else:
+    st.warning("No data available for this route.")
